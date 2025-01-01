@@ -44,7 +44,7 @@ def main():
             for sf in [1, 10]:
                 for config in ["explain", "explain_analyze"]:
                     for seed in [15721]:
-                        folder = result_root / f"pg{pg_version}/{benchmark}/sf_{sf}/{config}/{seed}/"
+                        folder = result_root / f"{hostname}/pg{pg_version}/{benchmark}/sf_{sf}/{config}/{seed}/"
                         for qnum in range(1, 22+1):
                             qsubnum = 1 if qnum != 15 else 2
                             filepaths.append(folder / f"{qnum}-{qsubnum}")

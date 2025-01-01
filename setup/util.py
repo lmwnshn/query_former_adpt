@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -12,6 +13,17 @@ def connstr() -> str:
     pg_host = os.getenv("PG_HOST")
     pg_port = os.getenv("PG_PORT")
     return f"postgresql+psycopg://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
+
+
+def dump_pg_stats(connection: Connection, filepath: Path):
+    result = conn_execute(connection, "SELECT row_to_json(s) from pg_stats s", verbose=False)
+    with open(filepath, "w") as f:
+        for row in result.fetchall():
+            stats = row[0]
+            if stats["schemaname"].startswith("pg_") or stats["schemaname"] == "information_schema":
+                continue
+            json_str = json.dumps(row[0])
+            print(json_str, file=f)
 
 
 def sql_file_queries(filepath: Path) -> [str]:
@@ -62,3 +74,14 @@ def vacuum_full_analyze_all(engine: Engine, connection: Connection, verbose=True
     inspector: Inspector = inspect(engine)
     for table in inspector.get_table_names():
         conn_execute(connection, f"VACUUM FULL ANALYZE {table}", verbose=verbose)
+
+
+if __name__ == "__main__":
+    from sqlalchemy import create_engine, NullPool
+    engine: Engine = create_engine(
+        "postgresql+psycopg://peft_user:peft_pass@localhost:15721/peft_db_tpch_sf_10",
+        poolclass=NullPool,
+        execution_options={"isolation_level": "AUTOCOMMIT"},
+    )
+    with engine.connect() as connection:
+        dump_pg_stats(connection, "./dumptest.json")

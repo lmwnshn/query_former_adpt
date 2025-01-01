@@ -46,7 +46,7 @@ for PG_VER in "${PG_TAGS_ORDER[@]}"; do
     # Create DB if not exists.
     ${PG_BIN_DIR}/psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -tc "SELECT 1 FROM pg_database WHERE datname = '${PG_DB}'" -d "${PG_DB_PREFIX}" | grep -q 1 || ${PG_BIN_DIR}/psql -h "${PG_HOST}" -p "${PG_PORT}" -c "create database ${PG_DB} with owner = '${PG_USER}'" postgres
     python3 ./setup/tpch_load.py
-    # Collect TPC-H plans.
+    # Collect TPC-H plans and stats.
     export TPCH_QUERY_START=15721
     export TPCH_QUERY_STOP=15721
     export TPCH_OUTPUT_DIR="${RESULT_DIR}/tpch/sf_${TPCH_SF}/"

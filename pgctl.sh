@@ -24,5 +24,9 @@ if [ "${CMD}" = "start" ]; then
 elif [ "${CMD}" = "stop" ]; then
   ${PG_BIN_DIR}/pg_ctl -D "${PGDATA}" stop -m fast
 elif [ "${CMD}" = "psql" ]; then
+  if [ ! -f "${PGDATA}/postmaster.pid" ]; then
+    echo "${PGDATA}/postmaster.pid not found, refusing."
+    exit 1
+  fi
   ${PG_BIN_DIR}/psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -d "${ARG1}"
 fi

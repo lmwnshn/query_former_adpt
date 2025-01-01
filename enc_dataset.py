@@ -6,13 +6,12 @@ import csv
 import argparse
 import threading
 from typing import List, Dict, Any, Optional
-import datasets
 
-import psycopg2
+# import psycopg2
 import pandas as pd
 import numpy as np
-import torch
-from sqlalchemy import create_engine
+# import torch
+# from sqlalchemy import create_engine
 
 # Import custom classes/modules
 # Ensure that 'model.database_util' is in your PYTHONPATH or the same directory
@@ -20,6 +19,8 @@ from model.database_util import Encoding
 
 # Configure logging
 import logging
+
+from huggingface_hub import hf_hub_download
 
 logging.basicConfig(
     level=logging.INFO,
@@ -197,38 +198,38 @@ def read_queries_from_file(file_path: str) -> List[str]:
         sys.exit(1)
 
 
-def get_query_plan(query: str, db_config: Dict[str, str]) -> Optional[Dict[str, Any]]:
+# def get_query_plan(query: str, db_config: Dict[str, str]) -> Optional[Dict[str, Any]]:
 
-    with psycopg2.connect(**db_config) as conn:
-        with conn.cursor() as cur:
-            try:
-                cur.execute(f"EXPLAIN (ANALYZE, FORMAT JSON) {query}")
-                plan = cur.fetchone()[0]  # fetchone() returns a tuple
-                return plan[0]
-            except Exception as e:
-                try:
-                    cur.execute(query)
-                    logging.error(f"Not supported for explain: {query}")
-                    return None
-                except Exception as e:
-                    print(e)
+#     with psycopg2.connect(**db_config) as conn:
+#         with conn.cursor() as cur:
+#             try:
+#                 cur.execute(f"EXPLAIN (ANALYZE, FORMAT JSON) {query}")
+#                 plan = cur.fetchone()[0]  # fetchone() returns a tuple
+#                 return plan[0]
+#             except Exception as e:
+#                 try:
+#                     cur.execute(query)
+#                     logging.error(f"Not supported for explain: {query}")
+#                     return None
+#                 except Exception as e:
+#                     print(e)
 
 
-def save_query_plans(queries: List[str], db_config: Dict[str, str], output_csv: str):
+# def save_query_plans(queries: List[str], db_config: Dict[str, str], output_csv: str):
 
-    query_plans = []
-    i = 0
-    for query in queries:
-        plan = get_query_plan(query, db_config)
-        if plan:
-            query_plans.append({"id": i, "json": json.dumps(plan)})
-            i += 1
-            # query_plans.append({"id": i, "json": json.dumps(plan), "sql": query})
+#     query_plans = []
+#     i = 0
+#     for query in queries:
+#         plan = get_query_plan(query, db_config)
+#         if plan:
+#             query_plans.append({"id": i, "json": json.dumps(plan)})
+#             i += 1
+#             # query_plans.append({"id": i, "json": json.dumps(plan), "sql": query})
 
-    full_train_df = pd.DataFrame(query_plans)
-    full_train_df.to_csv(output_csv, index=False)
-    logging.info(f"Saved query execution plans to '{output_csv}'. Total plans: {len(query_plans)}")
-    logging.info(full_train_df.head())
+#     full_train_df = pd.DataFrame(query_plans)
+#     full_train_df.to_csv(output_csv, index=False)
+#     logging.info(f"Saved query execution plans to '{output_csv}'. Total plans: {len(query_plans)}")
+#     logging.info(full_train_df.head())
 
 
 def load_and_validate_query_plans(input_csv: str) -> pd.DataFrame:
@@ -320,24 +321,24 @@ def process_schema_information() -> (Dict[str, List[Any]], Dict[str, int]):
     return column_min_max_vals, col2idx
 
 
-def save_encoding(encoding: Encoding, checkpoint_path: str):
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
-    torch.save({'encoding': encoding}, checkpoint_path)
-    logging.info(f"Encoding saved to '{checkpoint_path}'.")
+# def save_encoding(encoding: Encoding, checkpoint_path: str):
+#     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+#     torch.save({'encoding': encoding}, checkpoint_path)
+#     logging.info(f"Encoding saved to '{checkpoint_path}'.")
 
 
-def load_encoding(checkpoint_path: str) -> Encoding:
-    try:
-        encoding_ckpt = torch.load(checkpoint_path)
-        encoding = encoding_ckpt['encoding']
-        logging.info(f"Encoding loaded from '{checkpoint_path}'.")
-        return encoding
-    except FileNotFoundError:
-        logging.error(f"Error: Checkpoint file not found at {checkpoint_path}")
-        sys.exit(1)
-    except Exception as e:
-        logging.error(f"An error occurred while loading encoding: {e}")
-        sys.exit(1)
+# def load_encoding(checkpoint_path: str) -> Encoding:
+#     try:
+#         encoding_ckpt = torch.load(checkpoint_path)
+#         encoding = encoding_ckpt['encoding']
+#         logging.info(f"Encoding loaded from '{checkpoint_path}'.")
+#         return encoding
+#     except FileNotFoundError:
+#         logging.error(f"Error: Checkpoint file not found at {checkpoint_path}")
+#         sys.exit(1)
+#     except Exception as e:
+#         logging.error(f"An error occurred while loading encoding: {e}")
+#         sys.exit(1)
 
 
 def create_histograms(column_mapping: Dict[str, Dict[int, str]], db_alias: Dict[str, str],
@@ -648,8 +649,79 @@ def create_bitmaps(alias_to_db: Dict[str, str], db_alias: Dict[str, str],
 
     logging.info(f"Bitmap file saved as '{output_bitmap_file}'.")
 
+def get_hist_file(hist_path, bin_number = 50):
+    hist_file = pd.read_csv(hist_path)
+    for i in range(len(hist_file)):
+        freq = hist_file['freq'][i]
+        freq_np = np.frombuffer(bytes.fromhex(freq), dtype=float)
+        hist_file['freq'][i] = freq_np
+
+    table_column = []
+    for i in range(len(hist_file)):
+        table = hist_file['table'][i]
+        col = hist_file['column'][i]
+        table_alias = ''.join([tok[0] for tok in table.split('_')])
+        if table == 'movie_info_idx': table_alias = 'mi_idx'
+        combine = '.'.join([table_alias,col])
+        table_column.append(combine)
+    hist_file['table_column'] = table_column
+
+    for rid in range(len(hist_file)):
+        hist_file['bins'][rid] = \
+            [int(i) for i in hist_file['bins'][rid][1:-1].split(' ') if len(i)>0]
+
+    if bin_number != 50:
+        hist_file = re_bin(hist_file, bin_number)
+
+    return hist_file
+
+
+def re_bin(hist_file, target_number):
+    for i in range(len(hist_file)):
+        freq = hist_file['freq'][i]
+        bins = freq2bin(freq,target_number)
+        hist_file['bins'][i] = bins
+    return hist_file
+
+def freq2bin(freqs, target_number):
+    freq = freqs.copy()
+    maxi = len(freq)-1
+    
+    step = 1. / target_number
+    mini = 0
+    while freq[mini+1]==0:
+        mini+=1
+    pointer = mini+1
+    cur_sum = 0
+    res_pos = [mini]
+    residue = 0
+    while pointer < maxi+1:
+        cur_sum += freq[pointer]
+        freq[pointer] = 0
+        if cur_sum >= step:
+            cur_sum -= step
+            res_pos.append(pointer)
+        else:
+            pointer += 1
+    
+    if len(res_pos)==target_number: res_pos.append(maxi)
+    
+    return res_pos
+
 
 def main():
+    df = pd.read_parquet(hf_hub_download(repo_id="wanshenl/tpch", filename="result_dev9_tpch.pq", repo_type="dataset"))
+    hists = get_hist_file("./tpch10_data/histograms.csv")
+    # datapath = 'tpch10_data'
+    # train_query_plans_csv = f'{datapath}/train_query_plans.csv'
+    # test_query_plans_csv = f'{datapath}/test_query_plans.csv'
+    # full_train_df = load_and_validate_query_plans(train_query_plans_csv)
+    # full_test_df = load_and_validate_query_plans(test_query_plans_csv)
+    # format: id, plan_json
+
+    breakpoint()
+    return
+
     # Initialize Argument Parser
     parser = argparse.ArgumentParser(description="Process SQL queries and generate query plans, histograms, and bitmaps.")
     parser.add_argument('--file-name', type=str, default=DEFAULT_QUERY_FILE_PATH,
@@ -681,21 +753,6 @@ def main():
         "host": DEFAULT_DB_HOST,
         "port": DEFAULT_DB_PORT
     }
-
-    queries = read_queries_from_file(query_file_path)
-
-    train_size = int(0.8 * len(queries))
-    train_queries = queries[:train_size]
-    test_queries = queries[train_size:]
-
-    train_query_plans_csv = f'{datapath}/train_query_plans.csv'
-    test_query_plans_csv = f'{datapath}/test_query_plans.csv'
-
-    save_query_plans(train_queries, db_config, train_query_plans_csv)
-    save_query_plans(test_queries, db_config, test_query_plans_csv)
-
-    full_train_df = load_and_validate_query_plans(train_query_plans_csv)
-    full_test_df = load_and_validate_query_plans(test_query_plans_csv)
 
     column_min_max_vals, col2idx = process_schema_information()
 
